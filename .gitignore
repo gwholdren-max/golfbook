@@ -1,0 +1,14 @@
+# Screenshots (generated during booking)
+booking_page_*.png
+booking_confirmation.png
+booking_error.png
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

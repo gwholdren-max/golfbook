@@ -1,0 +1,19 @@
+{
+  "user_info": {
+    "first_name": "",
+    "last_name": "",
+    "email": "",
+    "phone": ""
+  },
+  "preferences": {
+    "preferred_times": ["07:00", "07:30", "08:00", "08:30"],
+    "days_ahead": 1,
+    "num_players": 1,
+    "course": "Charleston Municipal"
+  },
+  "automation": {
+    "check_interval_minutes": 1,
+    "auto_submit": true,
+    "headless": false
+  }
+}
