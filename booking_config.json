@@ -6,14 +6,14 @@
     "phone": ""
   },
   "preferences": {
-    "preferred_times": ["07:00", "07:30", "08:00", "08:30"],
+    "preferred_times": ["07:00", "08:00", "09:00", "10:00", "12:00", "14:00"],
     "days_ahead": 1,
     "num_players": 1,
     "course": "Charleston Municipal"
   },
   "automation": {
     "check_interval_minutes": 1,
-    "auto_submit": true,
+    "auto_submit": false,
     "headless": false
   }
 }
