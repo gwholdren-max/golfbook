@@ -453,6 +453,114 @@ class TeeTimeBooker:
             finally:
                 await browser.close()
     
+    async def search_tee_times(self, target_date, num_players=1):
+        """
+        Search for all available tee times on a given date.
+
+        Args:
+            target_date: Date to search (MM/DD/YYYY format)
+            num_players: Number of players
+
+        Returns:
+            List of dicts with keys: time, holes, course, players
+        """
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=self.config['automation']['headless']
+            )
+            context = await browser.new_context(viewport={'width': 1920, 'height': 1080})
+            page = await context.new_page()
+
+            try:
+                await page.goto(self.booking_url, wait_until='networkidle')
+                await page.wait_for_timeout(2000)
+
+                # Set number of players
+                players = str(num_players)
+                await page.evaluate(f'''(target) => {{
+                    const selects = document.querySelectorAll('select');
+                    for (const s of selects) {{
+                        const opts = Array.from(s.options).map(o => o.text.trim());
+                        if (opts.some(o => /^[1-4]$/.test(o))) {{
+                            for (const o of s.options) {{
+                                if (o.text.trim() === target || o.value === target) {{
+                                    s.value = o.value;
+                                    s.dispatchEvent(new Event('change', {{bubbles: true}}));
+                                }}
+                            }}
+                        }}
+                    }}
+                }}''', players)
+
+                # Set date
+                await page.evaluate(f'''(target) => {{
+                    const inputs = document.querySelectorAll('input');
+                    for (const inp of inputs) {{
+                        if (inp.type === 'date' || inp.name.toLowerCase().includes('date') || inp.id.toLowerCase().includes('date')) {{
+                            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            nativeSetter.call(inp, target);
+                            inp.dispatchEvent(new Event('input', {{bubbles: true}}));
+                            inp.dispatchEvent(new Event('change', {{bubbles: true}}));
+                        }}
+                    }}
+                }}''', target_date)
+
+                # Set begin time to earliest (07:00 am)
+                await page.evaluate('''() => {
+                    const inp = document.querySelector('input[name="begintime"], input#begintime');
+                    if (inp) {
+                        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                        nativeSetter.call(inp, '07:00 am');
+                        inp.dispatchEvent(new Event('input', {bubbles: true}));
+                        inp.dispatchEvent(new Event('change', {bubbles: true}));
+                    }
+                }''')
+
+                # Click Search
+                await page.evaluate('''() => {
+                    const buttons = document.querySelectorAll('button, input[type="submit"], input[type="button"]');
+                    for (const el of buttons) {
+                        const text = (el.textContent || el.value || '').trim();
+                        if (text === 'Search') { el.click(); return; }
+                    }
+                }''')
+                await page.wait_for_timeout(3000)
+
+                await page.screenshot(path='search_results.png')
+
+                # Scrape all available tee times from the results table
+                # The cart button has class "success" for available slots
+                results = await page.evaluate('''() => {
+                    const times = [];
+                    const rows = document.querySelectorAll('tr');
+                    for (const row of rows) {
+                        const btn = row.querySelector('a.cart-button');
+                        if (!btn) continue;
+                        const cells = row.querySelectorAll('td');
+                        const cellTexts = Array.from(cells).map(c => c.textContent.trim());
+                        // Columns: [cart icon, Time, Date, Holes, Course, Open Slots, Status...]
+                        const time = cellTexts[1] || '';
+                        const openSlots = cellTexts[5] || '0';
+                        times.push({
+                            time: time,
+                            spots: openSlots
+                        });
+                    }
+                    return times;
+                }''')
+
+                logger.info(f"Found {len(results)} available tee times for {target_date}")
+                for r in results:
+                    logger.info(f"  {r['time']} - {r['spots']} open")
+                return results
+
+            except Exception as e:
+                logger.error(f"Error searching tee times: {str(e)}")
+                return []
+
+            finally:
+                await browser.close()
+
     async def monitor_and_book(self):
         """
         Open one browser, search for tee times, and book when available.
@@ -483,7 +591,7 @@ async def main():
     booker = TeeTimeBooker()
 
     if booker.config['automation'].get('use_imessage', False):
-        from imessage_booker import prompt_for_booking, send_booking_result
+        from imessage_booker import prompt_for_booking, send_booking_result, send_imessage
         phone = os.environ.get('BOOKING_PHONE', booker.config['user_info'].get('phone', ''))
 
         booking = await prompt_for_booking(phone)
@@ -491,23 +599,36 @@ async def main():
             logger.error("No booking details received via iMessage, exiting.")
             return
 
-        # Apply iMessage values to config
-        booker.config['preferences']['num_players'] = booking['players']
         target_date = booking['date']
-        target_time = booking['time']
 
-        logger.info(f"iMessage booking: {target_date} at {target_time} for {booking['players']} player(s)")
-        try:
-            booked = await booker.book_tee_time(target_date, target_time)
-            if booked:
-                logger.info(f"Successfully booked for {target_date}!")
-                send_booking_result(phone, True, target_date, target_time)
+        if booking.get('search_only'):
+            # Search mode: return all available tee times
+            logger.info(f"Searching available tee times for {target_date}...")
+            results = await booker.search_tee_times(target_date, booking['players'])
+            if results:
+                lines = [f"Available for {target_date}:"]
+                for r in results:
+                    lines.append(f"  {r['time']} - {r['spots']} open")
+                send_imessage(phone, '\n'.join(lines))
             else:
-                logger.info(f"No availability for {target_date} at {target_time}")
-                send_booking_result(phone, False, target_date, target_time, no_availability=True)
-        except Exception as e:
-            logger.error(f"Booking failed: {str(e)}")
-            send_booking_result(phone, False, target_date, target_time)
+                send_imessage(phone, f"No tee times available for {target_date}.")
+        else:
+            # Booking mode
+            booker.config['preferences']['num_players'] = booking['players']
+            target_time = booking['time']
+
+            logger.info(f"iMessage booking: {target_date} at {target_time} for {booking['players']} player(s)")
+            try:
+                booked = await booker.book_tee_time(target_date, target_time)
+                if booked:
+                    logger.info(f"Successfully booked for {target_date}!")
+                    send_booking_result(phone, True, target_date, target_time)
+                else:
+                    logger.info(f"No availability for {target_date} at {target_time}")
+                    send_booking_result(phone, False, target_date, target_time, no_availability=True)
+            except Exception as e:
+                logger.error(f"Booking failed: {str(e)}")
+                send_booking_result(phone, False, target_date, target_time)
     else:
         # Option 1: Book immediately for specific date/time
         # await booker.book_tee_time('2026-02-14', '08:00')

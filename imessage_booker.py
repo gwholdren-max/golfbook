@@ -123,11 +123,15 @@ def parse_booking_request(text: str) -> dict:
       "saturday 7am"
       "2/14 3:30pm 4"
 
-    Returns: {date: "MM/DD/YYYY", time: "HH:MM", players: int}
+    Returns: {date: "MM/DD/YYYY", time: "HH:MM", players: int, search_only: bool}
+
+    If the message contains "available", "what's", or "search", search_only=True.
     """
     text = text.strip().lower()
     today = datetime.now()
-    result = {'date': None, 'time': None, 'players': 1}
+    search_keywords = ['available', "what's", 'whats', 'search', 'show', 'list', 'check']
+    is_search = any(kw in text for kw in search_keywords)
+    result = {'date': None, 'time': None, 'players': 1, 'search_only': is_search}
 
     # --- Parse date ---
     # "tomorrow"
@@ -188,9 +192,10 @@ def parse_booking_request(text: str) -> dict:
             if 0 <= hour <= 23:
                 result['time'] = f'{hour:02d}:{minute:02d}'
 
-    # Default time
+    # If no time was given, treat as a search request
     if not result['time']:
         result['time'] = '08:00'
+        result['search_only'] = True
 
     # --- Parse players ---
     players_match = re.search(r'(\d)\s*player', text)
@@ -228,11 +233,9 @@ async def prompt_for_booking(phone: str = None, poll_interval: int = 30, timeout
         raise ValueError("No phone number provided. Set BOOKING_PHONE in .env")
 
     prompt_message = (
-        "Golf booker ready! Reply with your booking details:\n"
-        "  Date (e.g. tomorrow, saturday, 02/08)\n"
-        "  Time (e.g. 7am, 2:30pm)\n"
-        "  Players (e.g. 1, 2)\n"
-        "Example: 'tomorrow 7am 1 player'"
+        "Golf booker ready! Reply with:\n"
+        "  Book: 'tomorrow 7am 1 player'\n"
+        "  Search: 'what's available today'"
     )
 
     send_imessage(phone, prompt_message)
@@ -258,10 +261,13 @@ async def prompt_for_booking(phone: str = None, poll_interval: int = 30, timeout
                 display_hour = 12
             time_display = f"{display_hour}:{minute} {period}"
 
-            confirm_msg = (
-                f"Booking: {booking['date']} at {time_display} "
-                f"for {booking['players']} player(s). Starting now..."
-            )
+            if booking.get('search_only'):
+                confirm_msg = f"Searching available tee times for {booking['date']}..."
+            else:
+                confirm_msg = (
+                    f"Booking: {booking['date']} at {time_display} "
+                    f"for {booking['players']} player(s). Starting now..."
+                )
             send_imessage(phone, confirm_msg)
             return booking
 
