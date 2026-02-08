@@ -197,7 +197,7 @@ class TeeTimeBooker:
                 else:
                     logger.warning("Could not find date input field")
 
-                # Begin time dropdown
+                # Begin time — format to match the site's "HH:MM am/pm" pattern
                 hour = int(target_time.split(':')[0])
                 minute = target_time.split(':')[1]
                 period = 'am' if hour < 12 else 'pm'
@@ -206,39 +206,22 @@ class TeeTimeBooker:
                     display_hour = 12
                 time_12h = f"{display_hour:02d}:{minute} {period}"
 
-                # Try multiple time formats: "02:30 pm", "2:30 pm", "2:30 PM", "14:30"
-                time_variants = [
-                    time_12h,
-                    f"{display_hour}:{minute} {period}",
-                    f"{display_hour:02d}:{minute} {period.upper()}",
-                    f"{display_hour}:{minute} {period.upper()}",
-                    target_time,
-                ]
-
-                time_set = await page.evaluate('''(variants) => {
-                    const selects = document.querySelectorAll('select');
-                    for (const s of selects) {
-                        const opts = Array.from(s.options).map(o => o.text.trim());
-                        const optsLower = opts.map(o => o.toLowerCase());
-                        if (optsLower.some(o => o.includes('am') || o.includes('pm'))) {
-                            for (const target of variants) {
-                                for (const o of s.options) {
-                                    if (o.text.trim().toLowerCase() === target.toLowerCase()) {
-                                        s.value = o.value;
-                                        s.dispatchEvent(new Event('change', {bubbles: true}));
-                                        return {found: true, name: s.name, selected: o.text.trim()};
-                                    }
-                                }
-                            }
-                            return {found: false, available: opts};
-                        }
-                    }
-                    return {found: false};
-                }''', time_variants)
+                # The site uses a text input (name=begintime), not a dropdown
+                time_set = await page.evaluate(f'''(target) => {{
+                    const inp = document.querySelector('input[name="begintime"], input#begintime');
+                    if (inp) {{
+                        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                        nativeSetter.call(inp, target);
+                        inp.dispatchEvent(new Event('input', {{bubbles: true}}));
+                        inp.dispatchEvent(new Event('change', {{bubbles: true}}));
+                        return {{found: true, name: inp.name, value: target}};
+                    }}
+                    return {{found: false}};
+                }}''', time_12h)
                 if time_set.get('found'):
-                    logger.info(f"Selected begin time: {time_set['selected']}")
+                    logger.info(f"Set begin time to {time_12h}")
                 else:
-                    logger.warning(f"Could not select time {time_12h}. Available: {time_set.get('available', 'unknown')}")
+                    logger.warning(f"Could not find begintime input field")
 
                 await page.screenshot(path='booking_page_2.png')
                 await page.wait_for_timeout(500)
@@ -343,6 +326,8 @@ class TeeTimeBooker:
                     await page.wait_for_timeout(3000)
                 else:
                     logger.warning("No available tee times found in results")
+                    await browser.close()
+                    return False
 
                 # Handle login page if redirected after clicking tee time
                 if 'login' in page.url.lower() or await page.query_selector('input[type="password"]'):
@@ -458,6 +443,8 @@ class TeeTimeBooker:
                     logger.info("Browser will remain open for 120 seconds...")
                     await page.wait_for_timeout(120000)
 
+                return True
+
             except Exception as e:
                 logger.error(f"Error during booking: {str(e)}")
                 await page.screenshot(path='booking_error.png')
@@ -494,12 +481,39 @@ class TeeTimeBooker:
 async def main():
     """Main entry point"""
     booker = TeeTimeBooker()
-    
-    # Option 1: Book immediately for specific date/time
-    # await booker.book_tee_time('2026-02-14', '08:00')
-    
-    # Option 2: Continuously monitor and auto-book
-    await booker.monitor_and_book()
+
+    if booker.config['automation'].get('use_imessage', False):
+        from imessage_booker import prompt_for_booking, send_booking_result
+        phone = os.environ.get('BOOKING_PHONE', booker.config['user_info'].get('phone', ''))
+
+        booking = await prompt_for_booking(phone)
+        if not booking:
+            logger.error("No booking details received via iMessage, exiting.")
+            return
+
+        # Apply iMessage values to config
+        booker.config['preferences']['num_players'] = booking['players']
+        target_date = booking['date']
+        target_time = booking['time']
+
+        logger.info(f"iMessage booking: {target_date} at {target_time} for {booking['players']} player(s)")
+        try:
+            booked = await booker.book_tee_time(target_date, target_time)
+            if booked:
+                logger.info(f"Successfully booked for {target_date}!")
+                send_booking_result(phone, True, target_date, target_time)
+            else:
+                logger.info(f"No availability for {target_date} at {target_time}")
+                send_booking_result(phone, False, target_date, target_time, no_availability=True)
+        except Exception as e:
+            logger.error(f"Booking failed: {str(e)}")
+            send_booking_result(phone, False, target_date, target_time)
+    else:
+        # Option 1: Book immediately for specific date/time
+        # await booker.book_tee_time('2026-02-14', '08:00')
+
+        # Option 2: Continuously monitor and auto-book
+        await booker.monitor_and_book()
 
 
 if __name__ == "__main__":

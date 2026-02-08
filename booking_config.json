@@ -14,6 +14,7 @@
   "automation": {
     "check_interval_minutes": 1,
     "auto_submit": false,
-    "headless": false
+    "headless": false,
+    "use_imessage": true
   }
 }
