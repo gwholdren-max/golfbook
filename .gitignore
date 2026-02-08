@@ -1,7 +1,5 @@
 # Screenshots (generated during booking)
-booking_page_*.png
-booking_confirmation.png
-booking_error.png
+*.png
 
 # Environment variables
 .env
