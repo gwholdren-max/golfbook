@@ -124,9 +124,39 @@ class TeeTimeBooker:
                 await page.goto(self.booking_url, wait_until='networkidle')
                 await page.wait_for_timeout(2000)
 
-                # Store credentials for login when prompted later
+                # Login first so cart buttons show as available
                 password = self.config['user_info'].get('password', '')
                 username = self.config['user_info'].get('username', '') or self.config['user_info'].get('email', '')
+
+                if username and password:
+                    sign_in_link = await page.query_selector('a:has-text("SIGN IN"), a:has-text("Sign In"), a:has-text("Login")')
+                    if sign_in_link:
+                        await sign_in_link.click()
+                        await page.wait_for_timeout(2000)
+
+                    if await page.query_selector('input[type="password"]'):
+                        logger.info("Logging in before search...")
+                        username_input = await page.query_selector('input[name*="user"], input[id*="user"], input[type="text"]')
+                        if username_input:
+                            await username_input.fill(username)
+                        pass_input = await page.query_selector('input[type="password"]')
+                        if pass_input:
+                            await pass_input.fill(password)
+                        login_btn = await page.query_selector('button:has-text("Login"), input[type="submit"]')
+                        if login_btn:
+                            await login_btn.click()
+                            await page.wait_for_timeout(3000)
+
+                        # Handle "Active Session Alert"
+                        continue_btn = await page.query_selector('button:has-text("Continue with Login"), a:has-text("Continue with Login")')
+                        if continue_btn:
+                            logger.info("Active session alert, clicking Continue with Login...")
+                            await continue_btn.click()
+                            await page.wait_for_timeout(3000)
+
+                        logger.info("Logged in, navigating back to search...")
+                        await page.goto(self.booking_url, wait_until='networkidle')
+                        await page.wait_for_timeout(2000)
 
                 await page.screenshot(path='booking_page_1.png')
                 logger.info("Screenshot saved: booking_page_1.png")
