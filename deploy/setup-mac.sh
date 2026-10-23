@@ -46,10 +46,29 @@ echo "==> Tee time site setup in ${REPO_DIR}"
 mkdir -p "${REPO_DIR}/data" "${AGENTS}"
 
 # ---------------------------------------------------------------- deps
+# pip's flags differ across Python versions: --break-system-packages only
+# exists on pip 23+ (PEP 668), and on an older Python a plain install is
+# both fine and the only thing that works. Try in order of least surprise.
+pip_install() {
+  "${PY}" -m pip install --upgrade "$@" 2>/dev/null && return 0
+  "${PY}" -m pip install --break-system-packages --upgrade "$@" 2>/dev/null && return 0
+  "${PY}" -m pip install --user --upgrade "$@" && return 0
+  echo "!!  Could not install: $*"
+  echo "!!  Try manually:  ${PY} -m pip install --user $*"
+  return 1
+}
+
 echo "==> Checking dependencies"
-"${PY}" -c 'import playwright' 2>/dev/null || \
-  pip3 install --break-system-packages --upgrade playwright
-"${PY}" -m playwright install chromium >/dev/null 2>&1 || true
+echo "    python: ${PY} ($("${PY}" --version 2>&1))"
+if ! "${PY}" -c 'import playwright' 2>/dev/null; then
+  echo "==> Installing playwright"
+  pip_install playwright
+fi
+echo "==> Ensuring Chromium is present (slow on first run)"
+"${PY}" -m playwright install chromium || {
+  echo "!!  Chromium install failed. The HTTP-only courses will still work;"
+  echo "!!  only Charleston Muni needs a browser."
+}
 
 # Pick the tunnel: ngrok when a reserved domain is configured, else a
 # cloudflared quick tunnel (whose URL changes on every restart).
@@ -72,7 +91,20 @@ if [ -f "${REPO_DIR}/deploy/tunnel.env" ]; then
 else
   if ! command -v cloudflared >/dev/null 2>&1; then
     echo "==> Installing cloudflared"
-    brew install cloudflared
+    if command -v brew >/dev/null 2>&1; then
+      brew install cloudflared
+    else
+      # No Homebrew: pull the signed binary straight from Cloudflare
+      ARCH="$(uname -m)"
+      [ "${ARCH}" = "x86_64" ] && ARCH="amd64"
+      [ "${ARCH}" = "arm64" ] && ARCH="arm64"
+      echo "    (no Homebrew — downloading the ${ARCH} binary)"
+      curl -fsSL -o /tmp/cloudflared.tgz \
+        "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-${ARCH}.tgz"
+      tar -xzf /tmp/cloudflared.tgz -C /tmp
+      sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+      rm -f /tmp/cloudflared.tgz /tmp/cloudflared
+    fi
   fi
   TUNNEL_BIN="$(command -v cloudflared)"
   TUNNEL_ARGS="<string>tunnel</string>

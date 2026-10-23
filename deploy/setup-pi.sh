@@ -32,7 +32,13 @@ if [ "${NEED_BROWSER}" = "1" ]; then
 fi
 
 echo "==> Installing Python dependencies"
-pip3 install --break-system-packages --upgrade playwright
+# --break-system-packages only exists on pip 23+; fall back for older ones
+pip_install() {
+  python3 -m pip install --upgrade "$@" 2>/dev/null && return 0
+  python3 -m pip install --break-system-packages --upgrade "$@" 2>/dev/null && return 0
+  python3 -m pip install --user --upgrade "$@"
+}
+pip_install playwright
 
 if [ "${NEED_BROWSER}" = "1" ]; then
   echo "==> Installing Chromium for Playwright (this one is slow)"
