@@ -66,7 +66,7 @@
     -webkit-font-smoothing: antialiased;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  .wrap { max-width: 940px; margin: 0 auto; padding-inline: var(--gutter); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding-inline: var(--gutter); }
 
   .cond {
     font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
@@ -206,22 +206,69 @@
     font-size: 13px; padding: 10px 0;
   }
 
-  /* ---------- filter bar ---------- */
-  .filterbar {
-    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    padding-block: 16px 4px;
+  /* ---------- layout ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: 212px minmax(0, 1fr);
+    gap: 30px;
+    align-items: start;
+    margin-top: 20px;
   }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 100px; overflow: hidden; }
+  .content { min-width: 0; }
+
+  .sidebar {
+    position: sticky;
+    top: 14px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .filtergroup { display: flex; flex-direction: column; gap: 7px; }
+  .grouphead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .grouplabel { font-size: 12px; color: var(--ink-faint); }
+  .selcount { font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+  /* segmented controls sit two-up in a narrow rail */
+  .seg { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
   .seg button {
-    font: inherit; font-size: 13px; padding: 5px 13px;
-    background: transparent; border: none; cursor: pointer;
-    color: var(--ink-muted);
+    font: inherit; font-size: 13px; padding: 5px 4px;
+    background: transparent; cursor: pointer; color: var(--ink-muted);
+    border: 1px solid var(--line); border-radius: 3px;
   }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
-  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .seglabel { font-size: 12px; color: var(--ink-faint); }
-  .grow { flex: 1 1 auto; }
+  .seg button:hover { border-color: var(--ink-faint); color: var(--ink); }
+  .seg button[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent);
+    color: var(--accent-ink); font-weight: 500;
+  }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* course picker */
+  .selectbtns { display: flex; gap: 6px; }
+  .selectbtns button {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
+    font-size: 11px; padding: 3px 9px; cursor: pointer;
+    background: transparent; color: var(--ink-muted);
+    border: 1px solid var(--line); border-radius: 100px;
+  }
+  .selectbtns button:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .selectbtns button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .courselist { display: flex; flex-direction: column; gap: 1px; }
+  .courseopt {
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 5px; margin-left: -5px;
+    border-radius: 3px; cursor: pointer;
+    font-size: 13px; line-height: 1.25; color: var(--ink-muted);
+  }
+  .courseopt:hover { background: var(--surface); color: var(--ink); }
+  .courseopt input { accent-color: var(--accent); margin: 0; flex: 0 0 auto; }
+  .courseopt input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .courseopt.on { color: var(--ink); }
+  .courseopt .nm { flex: 1 1 auto; min-width: 0; }
+  .courseopt .ct {
+    font-size: 11px; color: var(--ink-faint);
+    font-variant-numeric: tabular-nums; flex: 0 0 auto;
+  }
+  .courseopt.zero .nm { color: var(--ink-faint); }
 
   /* ---------- states ---------- */
   .empty-state {
@@ -245,7 +292,17 @@
   }
   footer.foot a { color: var(--ink-muted); }
 
-  @media (max-width: 900px) { .week { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+  @media (max-width: 1040px) { .week { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; gap: 18px; }
+    .sidebar {
+      position: static;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px 22px;
+      padding-bottom: 16px; border-bottom: 1px solid var(--line);
+    }
+    .courselist { max-height: 190px; overflow-y: auto; }
+  }
   @media (max-width: 560px) { .week { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; } }
   @media (max-width: 400px) { .week { grid-template-columns: repeat(2, minmax(0,1fr)); } }
   @media (max-width: 620px) {
@@ -277,16 +334,38 @@
     </div>
   </header>
 
-  <div class="filterbar">
-    <span class="seglabel cond">Players</span>
-    <div class="seg" id="players" role="group" aria-label="Minimum open spots"></div>
-    <span class="grow"></span>
-    <span class="seglabel cond">Time</span>
-    <div class="seg" id="period" role="group" aria-label="Time of day"></div>
-  </div>
+  <div class="layout">
+    <aside class="sidebar">
 
-  <div id="banner"></div>
-  <main id="main"></main>
+      <section class="filtergroup">
+        <span class="cond grouplabel">Players</span>
+        <div class="seg" id="players" role="group" aria-label="Minimum open spots"></div>
+      </section>
+
+      <section class="filtergroup">
+        <span class="cond grouplabel">Time of day</span>
+        <div class="seg" id="period" role="group" aria-label="Time of day"></div>
+      </section>
+
+      <section class="filtergroup">
+        <div class="grouphead">
+          <span class="cond grouplabel">Courses</span>
+          <span class="selcount" id="selcount"></span>
+        </div>
+        <div class="selectbtns">
+          <button type="button" id="selall">All</button>
+          <button type="button" id="selnone">Deselect all</button>
+        </div>
+        <div class="courselist" id="courselist"></div>
+      </section>
+
+    </aside>
+
+    <div class="content">
+      <div id="banner"></div>
+      <main id="main"></main>
+    </div>
+  </div>
 
   <footer class="foot">
     <span>Reads each course's public tee sheet every few minutes. Booking happens on the course's own site.</span>
@@ -308,6 +387,7 @@
     courses: [],
     minSpots: 1,
     period: "all",
+    hidden: null,          // Set of course ids the viewer unticked
     error: null
   };
 
@@ -318,6 +398,10 @@
     dot: document.getElementById("statusdot"),
     windownote: document.getElementById("windownote"),
     players: document.getElementById("players"),
+    courselist: document.getElementById("courselist"),
+    selcount: document.getElementById("selcount"),
+    selall: document.getElementById("selall"),
+    selnone: document.getElementById("selnone"),
     period: document.getElementById("period"),
     kicker: document.getElementById("kicker"),
     coursecount: document.getElementById("coursecount")
@@ -370,6 +454,85 @@
     if (diff === 1) return "Tomorrow";
     return DOW[d.getDay()] + " " + MONTHS[d.getMonth()] + " " + d.getDate();
   }
+
+  /* ---------- course selection ---------- */
+  var STORE_KEY = "teetimes.hiddenCourses";
+
+  /* Per-viewer convenience only — the page must work when this throws
+     (private windows, blocked site data). */
+  function loadHidden() {
+    try {
+      var raw = window.localStorage.getItem(STORE_KEY);
+      if (!raw) return new Set();
+      var ids = JSON.parse(raw);
+      return new Set(Array.isArray(ids) ? ids : []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  function saveHidden() {
+    try {
+      window.localStorage.setItem(
+        STORE_KEY, JSON.stringify(Array.from(state.hidden)));
+    } catch (e) { /* not worth bothering the viewer about */ }
+  }
+
+  function isShown(course) {
+    return !state.hidden || !state.hidden.has(course.id);
+  }
+
+  function renderCourseList() {
+    var courses = state.courses;
+    els.courselist.textContent = "";
+
+    courses.forEach(function (c) {
+      var shown = isShown(c);
+      var n = (c.days || []).reduce(function (sum, d) {
+        return sum + slotsFor(d).length;
+      }, 0);
+
+      var label = document.createElement("label");
+      label.className = "courseopt" + (shown ? " on" : "") + (n ? "" : " zero");
+
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = shown;
+      box.addEventListener("change", function () {
+        if (box.checked) state.hidden.delete(c.id);
+        else state.hidden.add(c.id);
+        saveHidden();
+        render();
+      });
+
+      var nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = c.name;
+
+      var ct = document.createElement("span");
+      ct.className = "ct";
+      ct.textContent = c.status === "paused" ? "\u2014" : String(n);
+
+      label.appendChild(box); label.appendChild(nm); label.appendChild(ct);
+      els.courselist.appendChild(label);
+    });
+
+    var showing = courses.filter(isShown).length;
+    els.selcount.textContent = courses.length
+      ? showing + " of " + courses.length : "";
+  }
+
+  els.selall.addEventListener("click", function () {
+    state.hidden = new Set();
+    saveHidden();
+    render();
+  });
+
+  els.selnone.addEventListener("click", function () {
+    state.hidden = new Set(state.courses.map(function (c) { return c.id; }));
+    saveHidden();
+    render();
+  });
 
   /* ---------- segmented controls ---------- */
   function buildSeg(host, options, current, onPick) {
@@ -435,7 +598,9 @@
     els.dot.className = "dot" + (ageMin > 30 ? " down" : ageMin > 12 ? " stale" : "");
     els.fresh.textContent = "Updated " + ago(oldest);
 
-    var live = courses.filter(function (c) { return (c.days || []).length; }).length;
+    var live = courses.filter(function (c) {
+      return isShown(c) && (c.days || []).length;
+    }).length;
     els.kicker.textContent = live + (live === 1 ? " course" : " courses") +
                              " \u00b7 Lowcountry golf";
 
@@ -673,13 +838,29 @@
       return;
     }
 
+    var shown = state.courses.filter(isShown);
+
+    if (!shown.length) {
+      var picked = document.createElement("div");
+      picked.className = "empty-state";
+      var st2 = document.createElement("strong");
+      st2.textContent = "No courses selected";
+      picked.appendChild(st2);
+      picked.appendChild(document.createTextNode(
+        "Tick a course in the sidebar, or press All."
+      ));
+      els.main.appendChild(picked);
+      return;
+    }
+
     var frag = document.createDocumentFragment();
-    state.courses.forEach(function (c) { frag.appendChild(renderCourse(c)); });
+    shown.forEach(function (c) { frag.appendChild(renderCourse(c)); });
     els.main.appendChild(frag);
   }
 
   function render() {
     renderHeader();
+    renderCourseList();
     renderBanner();
     renderWeek();
   }
@@ -695,6 +876,12 @@
         state.error = null;
         state.data = data;
         state.courses = data.courses || [];
+        if (state.hidden === null) {
+          // Restore the viewer's picks, dropping ids no longer in the feed
+          var known = new Set(state.courses.map(function (c) { return c.id; }));
+          state.hidden = new Set(
+            Array.from(loadHidden()).filter(function (id) { return known.has(id); }));
+        }
         render();
       })
       .catch(function (err) {
@@ -703,6 +890,7 @@
       });
   }
 
+  if (state.hidden === null) state.hidden = loadHidden();
   load();
   setInterval(load, REFRESH_MS);
   // Keep the "updated N min ago" line honest between fetches
