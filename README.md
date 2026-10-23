@@ -267,3 +267,43 @@ sudo cp deploy/teetime-card@.service deploy/teetime-card@.timer /etc/systemd/sys
 sudo systemctl enable --now teetime-card@$USER.timer
 systemctl list-timers teetime-card@$USER
 ```
+
+### Running it on a spare Mac
+
+A Mac that stays on works as well as a Pi, and better in two ways: iMessage
+delivery works, and Playwright needs no `xvfb`. An office machine nobody
+sits at also means the WebTrac browser window bothers no one, so Charleston
+Muni can run there.
+
+```bash
+./deploy/setup-mac.sh            # install launchd agents and start
+./deploy/setup-mac.sh --status   # what's loaded, health, public URL
+./deploy/setup-mac.sh --stop     # unload
+```
+
+It writes four agents into `~/Library/LaunchAgents`, with paths generated
+from wherever the repo lives:
+
+| Agent | Does |
+|---|---|
+| `com.golfbook.collector` | scrapes every 5 min, restarts on crash |
+| `com.golfbook.server` | serves on :8080 |
+| `com.golfbook.tunnel` | ngrok if `deploy/tunnel.env` exists, else cloudflared |
+| `com.golfbook.dailycard` | the 8am card |
+
+**Keep it awake.** launchd can't run a job on a sleeping Mac, and a Mac that
+sleeps takes the site down with it:
+
+```bash
+sudo pmset -a sleep 0 disablesleep 1
+sudo pmset -a autorestart 1       # come back after a power cut
+```
+
+**Stay logged in.** The WebTrac adapter drives a real browser, which needs an
+active window server session. Display sleep is fine; logging out is not.
+Enable automatic login if the machine might reboot unattended.
+
+**Watch for duplicate agents.** If a machine already runs the older
+`com.golfbook.midnight` / `search` / `listener` agents, they scrape the same
+sites on their own schedules. `launchctl list | grep golfbook` shows
+everything loaded.
