@@ -4,6 +4,7 @@ PNG and sends it by iMessage or email.
 
     python3 daily_card.py                      # default course, send it
     python3 daily_card.py --course stono-ferry
+    python3 daily_card.py --tomorrow           # tomorrow instead of today
     python3 daily_card.py --save-only          # just write the PNG
     python3 daily_card.py --email you@example.com
 
@@ -26,7 +27,7 @@ import smtplib
 import ssl
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 
 import adapters
@@ -66,20 +67,21 @@ def minutes_of(label):
         return 0
 
 
-async def todays_slots(course):
+async def slots_for_day(course, offset):
+    """Open times on the day `offset` days from today."""
     adapter = adapters.get_adapter(course['platform'])
     if not adapter:
         raise SystemExit("No adapter for platform '%s'" % course['platform'])
 
-    # One day is all we need, but adapters walk a window from today
+    # Adapters always walk forward from today, so ask for enough days
     probe = dict(course)
-    probe['daysAhead'] = 1
+    probe['daysAhead'] = offset + 1
     probe.setdefault('enabled', True)
     result = await adapter.fetch(probe)
 
-    today = datetime.now().strftime('%m/%d/%Y')
+    target = (datetime.now() + timedelta(days=offset)).strftime('%m/%d/%Y')
     for day in result.get('days', []):
-        if day['date'] == today:
+        if day['date'] == target:
             return day['slots']
     return []
 
@@ -148,7 +150,7 @@ CARD_HTML = """<!doctype html>
 </div></body></html>"""
 
 
-def build_html(course, slots, now):
+def build_html(course, slots, now, is_today=True):
     groups = [('Morning', 0, 12 * 60), ('Midday', 12 * 60, 16 * 60),
               ('Afternoon', 16 * 60, 24 * 60)]
     chunks = []
@@ -174,8 +176,10 @@ def build_html(course, slots, now):
                       '<div class="grid">%s</div></div>' % (label, ''.join(cells)))
 
     if not chunks:
-        body = ('<div class="none"><b>Nothing left today</b>'
-                'No open tee times remaining.</div>')
+        body = ('<div class="none"><b>%s</b>%s</div>'
+                % ('Nothing left today' if is_today else 'Fully booked',
+                   'No open tee times remaining.' if is_today
+                   else 'No open tee times on this day.'))
         count = 'No times available'
     else:
         body = ''.join(chunks)
@@ -257,29 +261,31 @@ async def run(args):
 
     course = load_course(args.course)
     now = datetime.now()
+    offset = 1 if args.tomorrow else 0
+    target = now + timedelta(days=offset)
 
-    logger.info('Fetching %s for %s...', course['name'], now.strftime('%m/%d'))
-    slots = await todays_slots(course)
+    logger.info('Fetching %s for %s...', course['name'], target.strftime('%m/%d'))
+    slots = await slots_for_day(course, offset)
 
-    # Only what someone could still go and play
-    cutoff = now.hour * 60 + now.minute
+    # Drop times already gone — but only when the card is for today
+    cutoff = (now.hour * 60 + now.minute) if offset == 0 else 0
     upcoming = [s for s in slots if minutes_of(s['time']) >= cutoff]
     upcoming.sort(key=lambda s: minutes_of(s['time']))
-    logger.info('%d of %d times still ahead of %s',
-                len(upcoming), len(slots), now.strftime('%-I:%M %p'))
+    logger.info('%d of %d times showing', len(upcoming), len(slots))
 
     if not os.path.isdir(OUT_DIR):
         os.makedirs(OUT_DIR)
     out = os.path.join(OUT_DIR, 'card-%s-%s.png'
-                       % (course['id'], now.strftime('%Y%m%d')))
-    await render_png(build_html(course, upcoming, now), out)
+                       % (course['id'], target.strftime('%Y%m%d')))
+    await render_png(build_html(course, upcoming, target, offset == 0), out)
     logger.info('Wrote %s', out)
 
-    caption = ('%s today: %s'
+    caption = ('%s %s: %s'
                % (course['name'],
+                  'tomorrow' if offset else 'today',
                   ', '.join(s['time'] for s in upcoming[:4]) + (
                       ' and %d more' % (len(upcoming) - 4) if len(upcoming) > 4 else '')
-                  if upcoming else 'nothing left today'))
+                  if upcoming else ('nothing open' if offset else 'nothing left today')))
 
     if args.save_only:
         print(out)
@@ -302,6 +308,8 @@ def main():
     parser.add_argument('--course', default='charleston-muni')
     parser.add_argument('--email')
     parser.add_argument('--phone')
+    parser.add_argument('--tomorrow', action='store_true',
+                        help="tomorrow's card instead of today's")
     parser.add_argument('--save-only', action='store_true',
                         help='render the PNG and print its path, send nothing')
     asyncio.run(run(parser.parse_args()))
