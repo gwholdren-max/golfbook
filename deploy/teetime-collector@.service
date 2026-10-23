@@ -1,0 +1,23 @@
+[Unit]
+Description=Tee time collector
+# Wait for real network, not just an interface — WiFi associates slowly on boot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/golfbook
+# xvfb-run gives Playwright a virtual display. Only the WebTrac adapter
+# (Charleston Muni) needs it; the HTTP adapters ignore it. -a picks a free
+# display number so a stale lock file can't wedge startup.
+ExecStart=/usr/bin/xvfb-run -a /usr/bin/python3 collector.py --interval 300
+Restart=always
+RestartSec=30
+# A scrape pass can take a couple of minutes; don't let systemd kill it early
+TimeoutStopSec=90
+StandardOutput=append:/home/%i/golfbook/data/collector.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

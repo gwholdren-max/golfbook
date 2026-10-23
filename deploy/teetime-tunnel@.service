@@ -1,0 +1,19 @@
+[Unit]
+Description=Cloudflare tunnel for the tee time site
+After=network-online.target teetime-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+# Quick tunnel: a new random *.trycloudflare.com URL on every restart.
+# Once you have a named tunnel, replace this line with:
+#   ExecStart=/usr/local/bin/cloudflared tunnel run <tunnel-name>
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/%i/golfbook/data/tunnel.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

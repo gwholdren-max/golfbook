@@ -158,3 +158,43 @@ leave it off to bind localhost only.
 `adapters/`. A course running a platform that already has an adapter is a
 config entry; a new platform is a new file in `adapters/` plus one line in
 `adapters/__init__.py`.
+
+### Running it on a Raspberry Pi
+
+A Pi makes a good home for this: it's always on, and because it's headless
+there's no window for the WebTrac adapter to pop up — so Charleston Muni
+can run there even though it needs a real browser.
+
+Use **64-bit** Raspberry Pi OS (Playwright only ships an ARM64 Chromium) on a
+Pi 4 or 5 with 4GB. Boot from a USB SSD if you can; cheap SD cards wear out
+under a write every five minutes.
+
+```bash
+git clone https://github.com/gwholdren-max/golfbook.git ~/golfbook
+cd ~/golfbook && ./deploy/setup-pi.sh
+```
+
+That installs dependencies, Chromium, and `cloudflared`, then registers three
+systemd services that start on boot and restart on failure:
+
+| Service | Does |
+|---|---|
+| `teetime-collector@<user>` | scrapes every 5 min, under `xvfb` |
+| `teetime-server@<user>` | serves the site on :8080 |
+| `teetime-tunnel@<user>` | exposes it publicly via Cloudflare |
+
+They're systemd *template* units, so `%i` resolves to your username and the
+paths work without editing anything.
+
+```bash
+systemctl status 'teetime-*'
+journalctl -u teetime-collector@$USER -f
+curl -s localhost:8080/healthz
+```
+
+Once it's on the Pi, turn Muni back on — set `"enabled": true` in
+`courses.json`. No restart needed; the collector re-reads the config each pass.
+
+A quick tunnel hands out a new `*.trycloudflare.com` URL every time it
+restarts. For an address that survives reboots, create a named tunnel and
+swap the `ExecStart` line in `deploy/teetime-tunnel@.service`.

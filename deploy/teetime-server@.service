@@ -1,0 +1,16 @@
+[Unit]
+Description=Tee time web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/golfbook
+# Bind to all interfaces so the tunnel (and the local network) can reach it
+ExecStart=/usr/bin/python3 server.py --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
