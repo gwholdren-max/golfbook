@@ -118,3 +118,43 @@ python -m playwright install chromium
 2. List multiple preferred times in priority order
 3. Use `headless: true` once you've verified it works
 4. Keep logs to see when times become available
+
+## Tee time website
+
+A local web server that shows Charleston Muni's live availability. Two
+processes: `collector.py` scrapes on a loop, `server.py` serves the site.
+
+```bash
+# one-off: pull current availability into data/tee_times.json
+python3 collector.py --once
+
+# the two long-running processes
+python3 collector.py --interval 300     # scrape every 5 minutes
+python3 server.py --host 0.0.0.0        # serve on http://<machine>:8080
+```
+
+`--host 0.0.0.0` makes it reachable from other devices on the network;
+leave it off to bind localhost only.
+
+**Routes**
+
+| Route | What it returns |
+|---|---|
+| `/` | the site |
+| `/api/tee-times` | collector output as JSON |
+| `/healthz` | `503` once data is older than 30 minutes — point a watchdog here |
+
+**Notes for the dedicated machine**
+
+- The scraper needs a real (non-headless) browser; Cloudflare blocks headless
+  Chromium on WebTrac. On a machine with no display, run the collector under
+  `xvfb-run`.
+- A failed scrape keeps the previous data rather than blanking the site, and
+  the page shows a warning banner when it's serving a stale read.
+- `data/tee_times.json` is written atomically, so the server never reads a
+  half-written file.
+
+**Adding another course** — `courses.json` maps courses to adapters in
+`adapters/`. A course running a platform that already has an adapter is a
+config entry; a new platform is a new file in `adapters/` plus one line in
+`adapters/__init__.py`.

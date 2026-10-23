@@ -1,0 +1,139 @@
+{
+  "_comment": "Course registry. 'platform' must be a key from adapters.supported(). 'enabled': false pauses collection for a course \u2014 its last-known times stay on the site, marked paused. 'login': true signs in before scraping.",
+  "courses": [
+    {
+      "id": "charleston-muni",
+      "name": "Charleston Municipal",
+      "area": "West Ashley",
+      "platform": "webtrac",
+      "bookingUrl": "https://sccharlestonweb.myvscloud.com/webtrac/web/search.html?module=GR&Search=no&interfaceparameter=webtrac_golf",
+      "siteUrl": "https://sccharlestonweb.myvscloud.com/webtrac/web/search.html?module=GR&Search=no&interfaceparameter=webtrac_golf",
+      "daysAhead": 8,
+      "numPlayers": 1,
+      "login": false,
+      "enabled": false,
+      "_enabledNote": "paused: WebTrac needs a visible browser window"
+    },
+    {
+      "id": "stono-ferry",
+      "name": "The Links at Stono Ferry",
+      "area": "Hollywood",
+      "platform": "foreup",
+      "courseId": 20188,
+      "scheduleId": 3903,
+      "bookingClass": 3511,
+      "_bookingClassNote": "3511 = Standard / Non Resident",
+      "siteUrl": "https://foreupsoftware.com/index.php/booking/20188/3903#/teetimes",
+      "daysAhead": 8
+    },
+    {
+      "id": "shadowmoss",
+      "name": "Shadowmoss Plantation",
+      "area": "West Ashley",
+      "platform": "foreup",
+      "courseId": 21766,
+      "scheduleId": 8813,
+      "bookingClass": 11335,
+      "_bookingClassNote": "Public",
+      "host": "app.foreupsoftware.com",
+      "siteUrl": "https://app.foreupsoftware.com/index.php/booking/21766/8813#/teetimes",
+      "daysAhead": 8
+    },
+    {
+      "id": "legend-oaks",
+      "name": "Legend Oaks Plantation",
+      "area": "Summerville",
+      "platform": "foreup",
+      "courseId": 22667,
+      "scheduleId": 11562,
+      "bookingClass": 50425,
+      "_bookingClassNote": "Public",
+      "siteUrl": "https://foreupsoftware.com/index.php/booking/22667/11562#/teetimes",
+      "daysAhead": 8
+    },
+    {
+      "id": "charleston-national",
+      "name": "Charleston National",
+      "area": "Mount Pleasant",
+      "platform": "foreup",
+      "courseId": 21415,
+      "scheduleId": 7624,
+      "bookingClass": 9877,
+      "_bookingClassNote": "Public Tee Times",
+      "siteUrl": "https://foreupsoftware.com/index.php/booking/21415/7624#/teetimes",
+      "daysAhead": 8
+    },
+    {
+      "id": "rivertowne",
+      "name": "RiverTowne Country Club",
+      "area": "Mount Pleasant",
+      "platform": "quick18",
+      "host": "rivertowne",
+      "siteUrl": "https://rivertowne.quick18.com/teetimes/searchmatrix",
+      "daysAhead": 8
+    },
+    {
+      "id": "dunes-west",
+      "name": "Dunes West Golf Club",
+      "area": "Mount Pleasant",
+      "platform": "quick18",
+      "host": "duneswest",
+      "siteUrl": "https://duneswest.quick18.com/teetimes/searchmatrix",
+      "daysAhead": 8
+    },
+    {
+      "id": "wescott",
+      "name": "Wescott Golf Club",
+      "area": "Summerville",
+      "platform": "chronogolf",
+      "slug": "the-golf-club-at-wescott-plantation",
+      "courseIds": [
+        "6fec8d46-8a09-4dd4-b55b-3e97a8a0d9a3",
+        "34aa754b-b61f-4ef8-a344-638c3869e771",
+        "cd83e5a1-ba1b-4705-bf38-08c43ac67448"
+      ],
+      "_note": "27 holes sold as three nines; same clock time can appear on more than one",
+      "siteUrl": "https://www.chronogolf.com/club/the-golf-club-at-wescott-plantation",
+      "daysAhead": 8
+    },
+    {
+      "id": "patriots-point",
+      "name": "Patriots Point Links",
+      "area": "Mount Pleasant",
+      "platform": "golfnow",
+      "facilityId": 83,
+      "_note": "read via GolfNow marketplace; the course's own EZLinks site is Cloudflare-protected",
+      "siteUrl": "https://www.golfnow.com/tee-times/facility/83/search",
+      "daysAhead": 8,
+      "coverage": "partial",
+      "coverageNote": "GolfNow marketplace only \u2014 the course's own tee sheet usually lists more times",
+      "directUrl": "https://patriotspoint.ezlinksgolf.com/index.html#/search"
+    },
+    {
+      "id": "wild-dunes-links",
+      "name": "Wild Dunes \u2014 Links Course",
+      "area": "Isle of Palms",
+      "platform": "golfnow",
+      "facilityId": 14228,
+      "_note": "read via GolfNow marketplace; the course's own EZLinks site is Cloudflare-protected",
+      "siteUrl": "https://www.golfnow.com/tee-times/facility/14228/search",
+      "daysAhead": 8,
+      "coverage": "partial",
+      "coverageNote": "GolfNow marketplace only \u2014 the course's own tee sheet usually lists more times",
+      "directUrl": "https://wilddunes.ezlinksgolf.com/index.html#/search"
+    },
+    {
+      "id": "wild-dunes-harbor",
+      "name": "Wild Dunes \u2014 Harbor Course",
+      "area": "Isle of Palms",
+      "platform": "golfnow",
+      "facilityId": 14229,
+      "_note": "read via GolfNow marketplace; the course's own EZLinks site is Cloudflare-protected",
+      "siteUrl": "https://www.golfnow.com/tee-times/facility/14229/search",
+      "daysAhead": 8,
+      "coverage": "partial",
+      "coverageNote": "GolfNow marketplace only \u2014 the course's own tee sheet usually lists more times",
+      "directUrl": "https://wilddunes.ezlinksgolf.com/index.html#/search"
+    }
+  ]
+}

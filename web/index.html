@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Charleston Tee Times</title>
+<meta name="description" content="Live tee time availability at Charleston-area golf courses.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+  :root {
+    --paper:     #F4F4F1;
+    --surface:   #FFFFFF;
+    --surface-2: #EBEDE7;
+    --ink:       #16211A;
+    --ink-muted: #5C6B60;
+    --ink-faint: #8A968D;
+    --line:      #DCDED6;
+    --line-soft: #E7E8E2;
+    --accent:    #2F6B4A;
+    --accent-ink:#FFFFFF;
+    --warm:      #9A7B2E;
+    --rust:      #A33F2E;
+    --gutter:    16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:     #111714;
+      --surface:   #1A211C;
+      --surface-2: #222A24;
+      --ink:       #E8EBE6;
+      --ink-muted: #9AA79E;
+      --ink-faint: #6E7C73;
+      --line:      #2A332D;
+      --line-soft: #212923;
+      --accent:    #6BAF86;
+      --accent-ink:#0E1512;
+      --warm:      #CBA74F;
+      --rust:      #D4725D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:     #111714;
+    --surface:   #1A211C;
+    --surface-2: #222A24;
+    --ink:       #E8EBE6;
+    --ink-muted: #9AA79E;
+    --ink-faint: #6E7C73;
+    --line:      #2A332D;
+    --line-soft: #212923;
+    --accent:    #6BAF86;
+    --accent-ink:#0E1512;
+    --warm:      #CBA74F;
+    --rust:      #D4725D;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding-inline: var(--gutter); }
+
+  .cond {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+
+  /* ---------- masthead ---------- */
+  header.top {
+    border-bottom: 2px solid var(--ink);
+    padding-block: 26px 16px;
+  }
+  .kicker { font-size: 12px; color: var(--ink-faint); }
+  h1 {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-weight: 700; font-size: 38px; line-height: 1;
+    margin: 5px 0 0; letter-spacing: -0.004em;
+  }
+  .sub {
+    display: flex; gap: 8px; align-items: baseline;
+    flex-wrap: wrap; margin-top: 9px;
+    font-size: 13px; color: var(--ink-muted);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  .dot.stale { background: var(--warm); }
+  .dot.down  { background: var(--rust); }
+  #freshness { font-variant-numeric: tabular-nums; }
+
+  /* ---------- course section ---------- */
+  .course { margin-top: 30px; }
+  .course + .course { margin-top: 38px; }
+  .coursehead {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding-bottom: 9px; border-bottom: 2px solid var(--ink);
+  }
+  .coursehead h2 {
+    margin: 0; font-size: 20px; font-weight: 600; line-height: 1.2;
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .coursehead .where { font-size: 12px; color: var(--ink-faint); }
+  .coursehead .meta {
+    font-size: 13px; color: var(--ink-faint);
+    font-variant-numeric: tabular-nums; margin-left: auto;
+  }
+  .coursehead .meta.warn { color: var(--warm); }
+  .partialtag {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
+    font-size: 11px; color: var(--warm);
+    border: 1px solid var(--warm); border-radius: 100px; padding: 1px 8px;
+  }
+  .coveragenote {
+    font-size: 12px; color: var(--ink-muted);
+    margin-top: 7px; display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .coveragenote a { color: var(--accent); }
+  .course.paused .coursehead { border-bottom-color: var(--line); }
+  .course.paused .coursehead h2 { color: var(--ink-muted); }
+  .course.paused .week { opacity: 0.6; }
+  .pausetag {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
+    font-size: 11px; color: var(--warm);
+    border: 1px solid var(--warm); border-radius: 100px;
+    padding: 1px 8px;
+  }
+
+  /* ---------- week grid ---------- */
+  .weekhead {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-top: 22px; padding-bottom: 9px; border-bottom: 1px solid var(--line);
+  }
+  .weekhead h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .weekhead .meta { font-size: 13px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+  .week {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+    align-items: start;
+  }
+  .daycol { min-width: 0; }
+  .daycol-head {
+    padding-bottom: 7px; margin-bottom: 8px;
+    border-bottom: 2px solid var(--ink);
+    text-align: center;
+  }
+  .daycol.is-empty .daycol-head { border-bottom-color: var(--line); }
+  .daycol.is-today .daycol-head { border-bottom-color: var(--accent); }
+  .dow {
+    font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em;
+    font-size: 11px; color: var(--ink-faint); display: block; line-height: 1.3;
+  }
+  .daycol.is-today .dow { color: var(--accent); }
+  .dnum {
+    font-size: 17px; font-weight: 600; line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+  }
+  .daycol.is-empty .dnum { color: var(--ink-faint); font-weight: 500; }
+  .dcount {
+    font-size: 11px; color: var(--ink-faint);
+    font-variant-numeric: tabular-nums; line-height: 1.3;
+  }
+
+  .stack { display: flex; flex-direction: column; gap: 4px; }
+  .tee {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 5px; text-decoration: none; color: inherit;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 3px; padding: 6px 7px;
+    transition: border-color .12s ease;
+  }
+  .tee:hover { border-color: var(--accent); }
+  .tee:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tee .t {
+    font-size: 13px; font-weight: 600; line-height: 1.15;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .tee.four { border-left: 3px solid var(--accent); }
+  .tee .right { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+  .tee .price {
+    font-size: 11px; color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .pips { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+  .pip {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: transparent; border: 1px solid var(--line);
+  }
+  .pip.on { background: var(--accent); border-color: var(--accent); }
+  .nothing {
+    text-align: center; color: var(--ink-faint);
+    font-size: 13px; padding: 10px 0;
+  }
+
+  /* ---------- filter bar ---------- */
+  .filterbar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding-block: 16px 4px;
+  }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 100px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 13px; padding: 5px 13px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--ink-muted);
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .seglabel { font-size: 12px; color: var(--ink-faint); }
+  .grow { flex: 1 1 auto; }
+
+  /* ---------- states ---------- */
+  .empty-state {
+    margin-top: 22px; padding: 38px 16px; text-align: center;
+    border: 1px dashed var(--line); border-radius: 4px;
+    color: var(--ink-muted); font-size: 14px;
+  }
+  .empty-state strong { display: block; color: var(--ink); font-size: 16px; margin-bottom: 5px; font-weight: 600; }
+  .banner {
+    margin-top: 18px; padding: 11px 14px; border-radius: 3px;
+    background: var(--surface); border-left: 3px solid var(--rust);
+    font-size: 13px; color: var(--ink-muted);
+  }
+  .banner.warn { border-left-color: var(--warm); }
+
+  footer.foot {
+    margin-top: 44px; padding-block: 16px 30px;
+    border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-faint);
+    display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap;
+  }
+  footer.foot a { color: var(--ink-muted); }
+
+  @media (max-width: 900px) { .week { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+  @media (max-width: 560px) { .week { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; } }
+  @media (max-width: 400px) { .week { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  @media (max-width: 620px) {
+    /* Keep each label beside its own control instead of stranding it */
+    .filterbar { gap: 6px 8px; }
+    .filterbar .grow { flex-basis: 100%; height: 0; }
+  }
+  @media (max-width: 520px) {
+    h1 { font-size: 30px; }
+    .slots { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); }
+    .slot .t { font-size: 17px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="kicker cond" id="kicker">Lowcountry golf</div>
+    <h1>Charleston Tee Times</h1>
+    <div class="sub">
+      <span class="dot" id="statusdot"></span>
+      <span id="freshness">Loading&hellip;</span>
+      <span class="grow"></span>
+      <span id="windownote"></span>
+    </div>
+  </header>
+
+  <div class="filterbar">
+    <span class="seglabel cond">Players</span>
+    <div class="seg" id="players" role="group" aria-label="Minimum open spots"></div>
+    <span class="grow"></span>
+    <span class="seglabel cond">Time</span>
+    <div class="seg" id="period" role="group" aria-label="Time of day"></div>
+  </div>
+
+  <div id="banner"></div>
+  <main id="main"></main>
+
+  <footer class="foot">
+    <span>Reads each course's public tee sheet every few minutes. Booking happens on the course's own site.</span>
+    <span id="coursecount"></span>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var REFRESH_MS = 60000;
+  var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  var state = {
+    data: null,
+    courses: [],
+    minSpots: 1,
+    period: "all",
+    error: null
+  };
+
+  var els = {
+    main: document.getElementById("main"),
+    banner: document.getElementById("banner"),
+    fresh: document.getElementById("freshness"),
+    dot: document.getElementById("statusdot"),
+    windownote: document.getElementById("windownote"),
+    players: document.getElementById("players"),
+    period: document.getElementById("period"),
+    kicker: document.getElementById("kicker"),
+    coursecount: document.getElementById("coursecount")
+  };
+
+  /* ---------- helpers ---------- */
+  function parseDate(mdy) {
+    var p = (mdy || "").split("/");
+    if (p.length !== 3) return null;
+    return new Date(+p[2], +p[0] - 1, +p[1]);   // MM/DD/YYYY
+  }
+
+  function isoToDate(s) {
+    if (!s) return null;
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function ago(date) {
+    var secs = Math.max(0, (Date.now() - date.getTime()) / 1000);
+    if (secs < 90) return "just now";
+    var mins = Math.round(secs / 60);
+    if (mins < 60) return mins + " min ago";
+    var hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + (hrs === 1 ? " hour ago" : " hours ago");
+    var days = Math.round(hrs / 24);
+    return days + (days === 1 ? " day ago" : " days ago");
+  }
+
+  /** "7:38 am" -> minutes since midnight, for sorting and bucketing. */
+  function toMinutes(t) {
+    var m = /^(\d{1,2}):(\d{2})\s*([ap])m$/i.exec((t || "").trim());
+    if (!m) return 0;
+    var h = +m[1] % 12;
+    if (m[3].toLowerCase() === "p") h += 12;
+    return h * 60 + (+m[2]);
+  }
+
+  function bucket(mins) {
+    if (mins < 12 * 60) return "morning";
+    if (mins < 16 * 60) return "midday";
+    return "evening";
+  }
+
+  function dayLabel(d) {
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var that = new Date(d.getTime()); that.setHours(0, 0, 0, 0);
+    var diff = Math.round((that - today) / 86400000);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Tomorrow";
+    return DOW[d.getDay()] + " " + MONTHS[d.getMonth()] + " " + d.getDate();
+  }
+
+  /* ---------- segmented controls ---------- */
+  function buildSeg(host, options, current, onPick) {
+    host.textContent = "";
+    options.forEach(function (o) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = o[1];
+      b.setAttribute("aria-pressed", o[0] === current ? "true" : "false");
+      b.addEventListener("click", function () {
+        onPick(o[0]);
+        Array.prototype.forEach.call(host.children, function (c) {
+          c.setAttribute("aria-pressed", c === b ? "true" : "false");
+        });
+        render();
+      });
+      host.appendChild(b);
+    });
+  }
+
+  buildSeg(els.players, [[1, "Any"], [2, "2+"], [3, "3+"], [4, "4"]],
+    state.minSpots, function (v) { state.minSpots = v; });
+
+  buildSeg(els.period, [["all", "All"], ["morning", "AM"],
+                        ["midday", "Midday"], ["evening", "PM"]],
+    state.period, function (v) { state.period = v; });
+
+  /* ---------- data ---------- */
+  function slotsFor(day) {
+    if (!day) return [];
+    return (day.slots || [])
+      .filter(function (s) { return (s.spots || 0) >= state.minSpots; })
+      .filter(function (s) {
+        return state.period === "all" || bucket(toMinutes(s.time)) === state.period;
+      })
+      .sort(function (a, b) { return toMinutes(a.time) - toMinutes(b.time); });
+  }
+
+  /* ---------- render ---------- */
+  function renderHeader() {
+    var courses = state.courses;
+
+    if (state.error) {
+      els.dot.className = "dot down";
+      els.fresh.textContent = "Can't reach the site";
+      return;
+    }
+
+    var stamps = courses
+      .filter(function (c) { return c.status !== "paused"; })
+      .map(function (c) { return isoToDate(c.updatedAt); })
+      .filter(Boolean);
+
+    if (!stamps.length) {
+      els.dot.className = "dot down";
+      els.fresh.textContent = "No data yet";
+      return;
+    }
+
+    // The site is only as fresh as its stalest course
+    var oldest = stamps.reduce(function (a, b) { return a < b ? a : b; });
+    var ageMin = (Date.now() - oldest.getTime()) / 60000;
+    els.dot.className = "dot" + (ageMin > 30 ? " down" : ageMin > 12 ? " stale" : "");
+    els.fresh.textContent = "Updated " + ago(oldest);
+
+    var live = courses.filter(function (c) { return (c.days || []).length; }).length;
+    els.kicker.textContent = live + (live === 1 ? " course" : " courses") +
+                             " \u00b7 Lowcountry golf";
+
+    var windows = courses
+      .map(function (c) { return c.window && parseDate(c.window.max); })
+      .filter(Boolean);
+    if (windows.length) {
+      var furthest = windows.reduce(function (a, b) { return a > b ? a : b; });
+      els.windownote.textContent = "Books through " +
+        MONTHS[furthest.getMonth()] + " " + furthest.getDate();
+    }
+    if (els.coursecount) {
+      els.coursecount.textContent = courses.length +
+        (courses.length === 1 ? " course tracked" : " courses tracked");
+    }
+  }
+
+  function isToday(d) {
+    var t = new Date();
+    return d.getFullYear() === t.getFullYear() &&
+           d.getMonth() === t.getMonth() &&
+           d.getDate() === t.getDate();
+  }
+
+  function renderBanner() {
+    els.banner.textContent = "";
+
+    if (state.error) {
+      var e = document.createElement("div");
+      e.className = "banner";
+      e.textContent = "The site can't reach its data right now. It'll recover on " +
+                      "the next collection pass.";
+      els.banner.appendChild(e);
+      return;
+    }
+
+    var failing = state.courses.filter(function (c) { return c.status === "error"; });
+    if (failing.length) {
+      var w = document.createElement("div");
+      w.className = "banner warn";
+      w.textContent = "The last scrape failed for " +
+        failing.map(function (c) { return c.name; }).join(", ") +
+        ". Showing the last good read for " +
+        (failing.length === 1 ? "it." : "those.");
+      els.banner.appendChild(w);
+    }
+  }
+
+  /** One course's week: a header plus eight day-columns. */
+  function renderCourse(course) {
+    var sec = document.createElement("section");
+    sec.className = "course" + (course.status === "paused" ? " paused" : "");
+
+    var days = course.days || [];
+    var perDay = days.map(slotsFor);
+    var total = perDay.reduce(function (n, l) { return n + l.length; }, 0);
+    var openDays = perDay.filter(function (l) { return l.length; }).length;
+
+    var head = document.createElement("div");
+    head.className = "coursehead";
+    var h2 = document.createElement("h2");
+    h2.textContent = course.name;
+    head.appendChild(h2);
+    if (course.area) {
+      var where = document.createElement("span");
+      where.className = "where";
+      where.textContent = course.area;
+      head.appendChild(where);
+    }
+    if (course.status === "paused") {
+      var tag = document.createElement("span");
+      tag.className = "pausetag";
+      tag.textContent = "Paused";
+      head.appendChild(tag);
+    }
+    if (course.coverage === "partial") {
+      var ptag = document.createElement("span");
+      ptag.className = "partialtag";
+      ptag.textContent = "Partial";
+      head.appendChild(ptag);
+    }
+
+    var meta = document.createElement("span");
+    meta.className = "meta" +
+      (course.status === "error" || course.status === "paused" ? " warn" : "");
+    if (course.status === "paused") {
+      var when = isoToDate(course.updatedAt);
+      meta.textContent = when ? "not updating \u00b7 last read " + ago(when)
+                              : "not updating";
+    } else {
+      meta.textContent = total
+        ? total + (total === 1 ? " time" : " times") + " across " +
+          openDays + (openDays === 1 ? " day" : " days")
+        : "nothing open";
+    }
+    head.appendChild(meta);
+    sec.appendChild(head);
+
+    if (course.coverage === "partial") {
+      var note = document.createElement("div");
+      note.className = "coveragenote";
+      var txt = document.createElement("span");
+      txt.textContent = course.coverageNote ||
+        "Showing marketplace inventory only — the course may have more times.";
+      note.appendChild(txt);
+      if (course.directUrl) {
+        var a = document.createElement("a");
+        a.href = course.directUrl;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = "Check the course's own tee sheet \u2192";
+        note.appendChild(a);
+      }
+      sec.appendChild(note);
+    }
+
+    if (!days.length) {
+      var ns = document.createElement("div");
+      ns.className = "empty-state";
+      ns.textContent = course.status === "not_connected"
+        ? "Not connected yet — no adapter for this course's booking platform."
+        : "No tee sheet loaded for this course.";
+      sec.appendChild(ns);
+      return sec;
+    }
+
+    if (!total) {
+      var es = document.createElement("div");
+      es.className = "empty-state";
+      var st = document.createElement("strong");
+      st.textContent = "Fully booked";
+      es.appendChild(st);
+      es.appendChild(document.createTextNode(
+        state.minSpots > 1 || state.period !== "all"
+          ? "Nothing here matches these filters."
+          : "No open tee times in the booking window."
+      ));
+      sec.appendChild(es);
+      return sec;
+    }
+
+    var grid = document.createElement("div");
+    grid.className = "week";
+
+    days.forEach(function (day, i) {
+      var d = parseDate(day.date);
+      var list = perDay[i];
+
+      var col = document.createElement("div");
+      col.className = "daycol" +
+        (list.length ? "" : " is-empty") +
+        (d && isToday(d) ? " is-today" : "");
+
+      var ch = document.createElement("div");
+      ch.className = "daycol-head";
+      var dow = document.createElement("span");
+      dow.className = "dow";
+      dow.textContent = d ? (isToday(d) ? "Today" : DOW[d.getDay()]) : "";
+      var num = document.createElement("div");
+      num.className = "dnum";
+      num.textContent = d ? String(d.getDate()) : (day.date || "");
+      var cnt = document.createElement("div");
+      cnt.className = "dcount";
+      cnt.textContent = list.length ? String(list.length) + " open" : "\u2014";
+      ch.appendChild(dow); ch.appendChild(num); ch.appendChild(cnt);
+      col.appendChild(ch);
+
+      if (!list.length) {
+        var dash = document.createElement("div");
+        dash.className = "nothing";
+        dash.textContent = "\u00b7";
+        col.appendChild(dash);
+      } else {
+        var stack = document.createElement("div");
+        stack.className = "stack";
+        list.forEach(function (slot) {
+          var card = slot.bookUrl ? document.createElement("a")
+                                  : document.createElement("div");
+          card.className = "tee" + ((slot.spots || 0) >= 4 ? " four" : "");
+          if (slot.bookUrl) {
+            card.href = slot.bookUrl;
+            card.target = "_blank";
+            card.rel = "noopener noreferrer";
+            card.title = course.name + " \u2014 " + slot.time + " \u2014 " +
+                         slot.spots + " open" +
+                         (slot.holes ? " \u2014 " + slot.holes : "") +
+                         (typeof slot.price === "number"
+                            ? " \u2014 from $" + Math.round(slot.price) : "");
+          }
+          var t = document.createElement("span");
+          t.className = "t";
+          t.textContent = (slot.time || "").replace(/\s*([ap])m$/i, "$1");
+          var right = document.createElement("span");
+          right.className = "right";
+          if (typeof slot.price === "number") {
+            var pr = document.createElement("span");
+            pr.className = "price";
+            pr.textContent = "$" + Math.round(slot.price);
+            right.appendChild(pr);
+          }
+          var pips = document.createElement("span");
+          pips.className = "pips";
+          for (var k = 0; k < 4; k++) {
+            var pip = document.createElement("span");
+            pip.className = "pip" + (k < (slot.spots || 0) ? " on" : "");
+            pips.appendChild(pip);
+          }
+          right.appendChild(pips);
+          card.appendChild(t); card.appendChild(right);
+          stack.appendChild(card);
+        });
+        col.appendChild(stack);
+      }
+
+      grid.appendChild(col);
+    });
+
+    sec.appendChild(grid);
+    return sec;
+  }
+
+  function renderWeek() {
+    els.main.textContent = "";
+
+    if (!state.courses.length) {
+      var none = document.createElement("div");
+      none.className = "empty-state";
+      var st = document.createElement("strong");
+      st.textContent = "No tee sheets loaded";
+      none.appendChild(st);
+      none.appendChild(document.createTextNode(
+        "Run the collector to pull availability: python3 collector.py --once"
+      ));
+      els.main.appendChild(none);
+      return;
+    }
+
+    var frag = document.createDocumentFragment();
+    state.courses.forEach(function (c) { frag.appendChild(renderCourse(c)); });
+    els.main.appendChild(frag);
+  }
+
+  function render() {
+    renderHeader();
+    renderBanner();
+    renderWeek();
+  }
+
+  /* ---------- load ---------- */
+  function load() {
+    fetch("/api/tee-times", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("http " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        state.error = null;
+        state.data = data;
+        state.courses = data.courses || [];
+        render();
+      })
+      .catch(function (err) {
+        state.error = err;
+        render();
+      });
+  }
+
+  load();
+  setInterval(load, REFRESH_MS);
+  // Keep the "updated N min ago" line honest between fetches
+  setInterval(renderHeader, 30000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) load();
+  });
+})();
+</script>
+</body>
+</html>

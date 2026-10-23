@@ -84,6 +84,222 @@ class TeeTimeBooker:
             }
         }
     
+    # --- Shared WebTrac page helpers -------------------------------------
+    # The search form controls (#begindate, #numberofplayers) are hidden Vue
+    # components, so Playwright's fill()/select_option() can't touch them —
+    # everything goes through the native value setter plus input/change events.
+
+    @staticmethod
+    def _format_time_12h(target_time):
+        """Convert 'HH:MM' (24h) to the site's 'hh:mm am/pm' format"""
+        hour = int(target_time.split(':')[0])
+        minute = target_time.split(':')[1]
+        period = 'am' if hour < 12 else 'pm'
+        display_hour = hour if hour <= 12 else hour - 12
+        if display_hour == 0:
+            display_hour = 12
+        return f"{display_hour:02d}:{minute} {period}"
+
+    @staticmethod
+    def _in_window(target_date, min_date, max_date):
+        """True if target_date (MM/DD/YYYY) falls within [min_date, max_date]"""
+        fmt = '%m/%d/%Y'
+        try:
+            target = datetime.strptime(target_date, fmt)
+            return (datetime.strptime(min_date, fmt) <= target
+                    <= datetime.strptime(max_date, fmt))
+        except ValueError:
+            return True  # can't parse it — let the search run anyway
+
+    async def get_booking_window(self, page):
+        """
+        Read the bookable date range straight off the date picker.
+        The site publishes it as data-rule-mindate/data-rule-maxdate.
+
+        Returns (min_date, max_date) as MM/DD/YYYY strings, or (None, None).
+        """
+        window = await page.evaluate('''() => {
+            const d = document.querySelector('#begindate');
+            if (!d) return null;
+            return {
+                min: d.getAttribute('data-rule-mindate') || d.getAttribute('data-datepicker-min-date'),
+                max: d.getAttribute('data-rule-maxdate') || d.getAttribute('data-datepicker-max-date')
+            };
+        }''')
+        if not window:
+            return (None, None)
+        return (window.get('min'), window.get('max'))
+
+    async def set_search_criteria(self, page, target_date, num_players, begin_time='07:00'):
+        """Fill the search form (players, date, begin time) via the native setters"""
+        result = await page.evaluate('''({date, players, time}) => {
+            const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value').set;
+            const out = {players: false, date: false, time: false};
+
+            const sel = document.querySelector('#numberofplayers, select[name="numberofplayers"]');
+            if (sel) {
+                for (const o of sel.options) {
+                    if (o.text.trim() === players || o.value === players) {
+                        sel.value = o.value;
+                        sel.dispatchEvent(new Event('input', {bubbles: true}));
+                        sel.dispatchEvent(new Event('change', {bubbles: true}));
+                        out.players = true;
+                    }
+                }
+            }
+
+            const setInput = (el, value) => {
+                setter.call(el, value);
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+            };
+
+            const d = document.querySelector('#begindate, input[name="begindate"]');
+            if (d) { setInput(d, date); out.date = true; }
+
+            const t = document.querySelector('#begintime, input[name="begintime"]');
+            if (t) { setInput(t, time); out.time = true; }
+
+            // The Vue widgets render their own visible mirror inputs
+            // (id like "begintime_vm_3_input"). Keep them in sync so the
+            // widget doesn't write a stale value back on submit.
+            document.querySelectorAll('input[id*="_vm_"][id$="_input"]').forEach(m => {
+                if (/^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(m.value)) setInput(m, date);
+                else if (/^\\d{1,2}:\\d{2}\\s*[ap]m$/i.test(m.value)) setInput(m, time);
+            });
+
+            return out;
+        }''', {'date': target_date, 'players': str(num_players),
+               'time': self._format_time_12h(begin_time)})
+
+        if not result.get('date'):
+            logger.warning("Could not find the #begindate input")
+        if not result.get('players'):
+            logger.warning("Could not set the number of players")
+        return result
+
+    async def click_search(self, page, timeout=15000):
+        """
+        Submit the search form.
+
+        The page has several elements whose text is exactly "Search" — the
+        first in DOM order is the header nav dropdown (a <button type=submit>
+        that only opens a menu). Clicking that is a no-op for the search, so
+        target the sidebar button by id instead.
+        """
+        for selector in ('#grwebsearch_buttonsearch',
+                         '#grwebsearch_noresultsbutton',
+                         'button.filter-group-search'):
+            btn = await page.query_selector(selector)
+            if btn:
+                await btn.click()
+                logger.info(f"Clicked search button ({selector})")
+                break
+        else:
+            logger.warning("Could not find the sidebar Search button")
+            return False
+
+        # Submitting the form is a full page navigation, so wait on the load
+        # state rather than a results selector — a legitimately empty day
+        # ("Your search did not return any matching results") would otherwise
+        # burn the whole selector timeout.
+        try:
+            await page.wait_for_load_state('networkidle', timeout=timeout)
+        except Exception:
+            logger.info("Page did not reach networkidle before timeout")
+        await page.wait_for_timeout(500)
+        return True
+
+    async def scrape_results(self, page):
+        """
+        Scrape the results table into [{time, date, holes, course, spots, href}].
+
+        Each <td> is prefixed with a hidden "mobile-column-header" span
+        (so a cell reads "Time 7:38 am"); that span is stripped here, and
+        columns are matched by header name rather than fixed indexes.
+        """
+        return await page.evaluate('''() => {
+            const cellText = (cell) => {
+                const clone = cell.cloneNode(true);
+                clone.querySelectorAll('.mobile-column-header').forEach(s => s.remove());
+                return clone.textContent.replace(/\\s+/g, ' ').trim();
+            };
+
+            // Map column name -> index from the header row
+            const headerRow = document.querySelector('tr:has(th)') ||
+                              document.querySelector('thead tr');
+            const headers = headerRow
+                ? Array.from(headerRow.querySelectorAll('th,td')).map(c => cellText(c).toLowerCase())
+                : [];
+            const col = (name, fallback) => {
+                const i = headers.indexOf(name);
+                return i === -1 ? fallback : i;
+            };
+            const iTime = col('time', 1), iDate = col('date', 2),
+                  iHoles = col('holes', 3), iCourse = col('course', 4),
+                  iSlots = col('open slots', 5);
+
+            const times = [];
+            for (const row of document.querySelectorAll('tr')) {
+                const btn = row.querySelector('a.cart-button');
+                if (!btn) continue;
+                if (btn.classList.contains('error')) continue;  // Unavailable
+                const cells = Array.from(row.querySelectorAll('td')).map(cellText);
+                times.push({
+                    time: cells[iTime] || '',
+                    date: cells[iDate] || '',
+                    holes: cells[iHoles] || '',
+                    course: cells[iCourse] || '',
+                    spots: cells[iSlots] || '0',
+                    href: btn.href || ''
+                });
+            }
+            return times;
+        }''')
+
+    async def login(self, page):
+        """Log in so cart buttons show as Available rather than Unavailable"""
+        password = self.config['user_info'].get('password', '')
+        username = (self.config['user_info'].get('username', '')
+                    or self.config['user_info'].get('email', ''))
+        if not (username and password):
+            return False
+
+        sign_in_link = await page.query_selector(
+            'a:has-text("SIGN IN"), a:has-text("Sign In"), a:has-text("Login")')
+        if sign_in_link:
+            await sign_in_link.click()
+            await page.wait_for_timeout(2000)
+
+        if not await page.query_selector('input[type="password"]'):
+            return False
+
+        logger.info("Logging in before search...")
+        username_input = await page.query_selector(
+            'input[name*="user"], input[id*="user"], input[type="text"]')
+        if username_input:
+            await username_input.fill(username)
+        pass_input = await page.query_selector('input[type="password"]')
+        if pass_input:
+            await pass_input.fill(password)
+        login_btn = await page.query_selector('button:has-text("Login"), input[type="submit"]')
+        if login_btn:
+            await login_btn.click()
+            await page.wait_for_timeout(3000)
+
+        # Handle "Active Session Alert"
+        continue_btn = await page.query_selector(
+            'button:has-text("Continue with Login"), a:has-text("Continue with Login")')
+        if continue_btn:
+            logger.info("Active session alert, clicking Continue with Login...")
+            await continue_btn.click()
+            await page.wait_for_timeout(3000)
+
+        await page.goto(self.booking_url, wait_until='networkidle')
+        await page.wait_for_timeout(2000)
+        return True
+
     async def wait_for_booking_window(self):
         """Wait until the booking window opens (usually midnight or 6 AM)"""
         # Adjust this based on when Charleston Municipal releases new tee times
@@ -125,155 +341,32 @@ class TeeTimeBooker:
                 await page.wait_for_timeout(2000)
 
                 # Login first so cart buttons show as available
-                password = self.config['user_info'].get('password', '')
-                username = self.config['user_info'].get('username', '') or self.config['user_info'].get('email', '')
-
-                if username and password:
-                    sign_in_link = await page.query_selector('a:has-text("SIGN IN"), a:has-text("Sign In"), a:has-text("Login")')
-                    if sign_in_link:
-                        await sign_in_link.click()
-                        await page.wait_for_timeout(2000)
-
-                    if await page.query_selector('input[type="password"]'):
-                        logger.info("Logging in before search...")
-                        username_input = await page.query_selector('input[name*="user"], input[id*="user"], input[type="text"]')
-                        if username_input:
-                            await username_input.fill(username)
-                        pass_input = await page.query_selector('input[type="password"]')
-                        if pass_input:
-                            await pass_input.fill(password)
-                        login_btn = await page.query_selector('button:has-text("Login"), input[type="submit"]')
-                        if login_btn:
-                            await login_btn.click()
-                            await page.wait_for_timeout(3000)
-
-                        # Handle "Active Session Alert"
-                        continue_btn = await page.query_selector('button:has-text("Continue with Login"), a:has-text("Continue with Login")')
-                        if continue_btn:
-                            logger.info("Active session alert, clicking Continue with Login...")
-                            await continue_btn.click()
-                            await page.wait_for_timeout(3000)
-
-                        logger.info("Logged in, navigating back to search...")
-                        await page.goto(self.booking_url, wait_until='networkidle')
-                        await page.wait_for_timeout(2000)
+                await self.login(page)
 
                 await page.screenshot(path='booking_page_1.png')
                 logger.info("Screenshot saved: booking_page_1.png")
 
                 # --- Step 1: Set search filters ---
+                min_date, max_date = await self.get_booking_window(page)
+                if min_date and max_date:
+                    logger.info(f"Site booking window: {min_date} - {max_date}")
+                    if not self._in_window(target_date, min_date, max_date):
+                        logger.warning(
+                            f"{target_date} is outside the booking window "
+                            f"({min_date} - {max_date})")
+                        return False
 
-                # Debug: log all selects and inputs on the page
-                select_info = await page.evaluate('''() => {
-                    const selects = document.querySelectorAll('select');
-                    return Array.from(selects).map((s, i) => ({
-                        index: i,
-                        name: s.name,
-                        id: s.id,
-                        options: Array.from(s.options).map(o => ({value: o.value, text: o.text.trim()}))
-                    }));
-                }''')
-                for s in select_info:
-                    logger.info(f"Found select[{s['index']}] name='{s['name']}' id='{s['id']}' options={s['options'][:6]}")
-
-                input_info = await page.evaluate('''() => {
-                    const inputs = document.querySelectorAll('input');
-                    return Array.from(inputs).map((inp, i) => ({
-                        index: i, type: inp.type, name: inp.name, id: inp.id, value: inp.value
-                    }));
-                }''')
-                for inp in input_info:
-                    logger.info(f"Found input[{inp['index']}] type='{inp['type']}' name='{inp['name']}' id='{inp['id']}' value='{inp['value']}'")
-
-                # Number of players - use JavaScript to set value and trigger change
-                players = str(self.config['preferences']['num_players'])
-                player_set = await page.evaluate(f'''(target) => {{
-                    const selects = document.querySelectorAll('select');
-                    for (const s of selects) {{
-                        const opts = Array.from(s.options).map(o => o.text.trim().toLowerCase());
-                        if (opts.some(o => /^[1-4]$/.test(o))) {{
-                            for (const o of s.options) {{
-                                if (o.text.trim() === target || o.value === target) {{
-                                    s.value = o.value;
-                                    s.dispatchEvent(new Event('change', {{bubbles: true}}));
-                                    return {{found: true, name: s.name, selected: o.text.trim()}};
-                                }}
-                            }}
-                        }}
-                    }}
-                    return {{found: false}};
-                }}''', players)
-                if player_set.get('found'):
-                    logger.info(f"Selected {player_set['selected']} player(s) via {player_set['name']}")
-                else:
-                    logger.warning("Could not find/set player count dropdown")
-
-                # Date field - try multiple approaches
-                date_set = await page.evaluate(f'''(target) => {{
-                    const inputs = document.querySelectorAll('input');
-                    for (const inp of inputs) {{
-                        if (inp.type === 'date' || inp.name.toLowerCase().includes('date') || inp.id.toLowerCase().includes('date')) {{
-                            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                            nativeSetter.call(inp, target);
-                            inp.dispatchEvent(new Event('input', {{bubbles: true}}));
-                            inp.dispatchEvent(new Event('change', {{bubbles: true}}));
-                            return {{found: true, name: inp.name, id: inp.id}};
-                        }}
-                    }}
-                    return {{found: false}};
-                }}''', target_date)
-                if date_set.get('found'):
-                    logger.info(f"Set date to {target_date} via {date_set.get('name') or date_set.get('id')}")
-                else:
-                    logger.warning("Could not find date input field")
-
-                # Begin time — format to match the site's "HH:MM am/pm" pattern
-                hour = int(target_time.split(':')[0])
-                minute = target_time.split(':')[1]
-                period = 'am' if hour < 12 else 'pm'
-                display_hour = hour if hour <= 12 else hour - 12
-                if display_hour == 0:
-                    display_hour = 12
-                time_12h = f"{display_hour:02d}:{minute} {period}"
-
-                # The site uses a text input (name=begintime), not a dropdown
-                time_set = await page.evaluate(f'''(target) => {{
-                    const inp = document.querySelector('input[name="begintime"], input#begintime');
-                    if (inp) {{
-                        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                        nativeSetter.call(inp, target);
-                        inp.dispatchEvent(new Event('input', {{bubbles: true}}));
-                        inp.dispatchEvent(new Event('change', {{bubbles: true}}));
-                        return {{found: true, name: inp.name, value: target}};
-                    }}
-                    return {{found: false}};
-                }}''', time_12h)
-                if time_set.get('found'):
-                    logger.info(f"Set begin time to {time_12h}")
-                else:
-                    logger.warning(f"Could not find begintime input field")
+                players = self.config['preferences']['num_players']
+                await self.set_search_criteria(page, target_date, players, target_time)
+                logger.info(
+                    f"Searching {target_date} from {self._format_time_12h(target_time)} "
+                    f"for {players} player(s)")
 
                 await page.screenshot(path='booking_page_2.png')
                 await page.wait_for_timeout(500)
 
-                # --- Step 2: Click Search (sidebar button, not nav link) ---
-                search_clicked = await page.evaluate('''() => {
-                    // Target the sidebar Search button specifically, not the nav menu
-                    const buttons = document.querySelectorAll('button, input[type="submit"], input[type="button"]');
-                    for (const el of buttons) {
-                        const text = (el.textContent || el.value || '').trim();
-                        if (text === 'Search') {
-                            el.click();
-                            return {found: true, text: text, tag: el.tagName};
-                        }
-                    }
-                    return {found: false};
-                }''')
-                if search_clicked.get('found'):
-                    logger.info(f"Clicked '{search_clicked['text']}'")
-                    await page.wait_for_timeout(3000)
-                else:
-                    logger.warning("Could not find Search button")
+                # --- Step 2: Click Search (sidebar button, not the nav menu) ---
+                await self.click_search(page)
 
                 await page.screenshot(path='booking_page_3.png')
 
@@ -505,79 +598,23 @@ class TeeTimeBooker:
                 await page.goto(self.booking_url, wait_until='networkidle')
                 await page.wait_for_timeout(2000)
 
-                # Set number of players
-                players = str(num_players)
-                await page.evaluate(f'''(target) => {{
-                    const selects = document.querySelectorAll('select');
-                    for (const s of selects) {{
-                        const opts = Array.from(s.options).map(o => o.text.trim());
-                        if (opts.some(o => /^[1-4]$/.test(o))) {{
-                            for (const o of s.options) {{
-                                if (o.text.trim() === target || o.value === target) {{
-                                    s.value = o.value;
-                                    s.dispatchEvent(new Event('change', {{bubbles: true}}));
-                                }}
-                            }}
-                        }}
-                    }}
-                }}''', players)
+                # Login first so cart buttons show as available
+                await self.login(page)
 
-                # Set date
-                await page.evaluate(f'''(target) => {{
-                    const inputs = document.querySelectorAll('input');
-                    for (const inp of inputs) {{
-                        if (inp.type === 'date' || inp.name.toLowerCase().includes('date') || inp.id.toLowerCase().includes('date')) {{
-                            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                            nativeSetter.call(inp, target);
-                            inp.dispatchEvent(new Event('input', {{bubbles: true}}));
-                            inp.dispatchEvent(new Event('change', {{bubbles: true}}));
-                        }}
-                    }}
-                }}''', target_date)
+                # Bail out early if the date is outside the bookable window
+                min_date, max_date = await self.get_booking_window(page)
+                if min_date and max_date and not self._in_window(target_date, min_date, max_date):
+                    logger.info(
+                        f"{target_date} is outside the booking window "
+                        f"({min_date} - {max_date}), skipping")
+                    return []
 
-                # Set begin time to earliest (07:00 am)
-                await page.evaluate('''() => {
-                    const inp = document.querySelector('input[name="begintime"], input#begintime');
-                    if (inp) {
-                        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                        nativeSetter.call(inp, '07:00 am');
-                        inp.dispatchEvent(new Event('input', {bubbles: true}));
-                        inp.dispatchEvent(new Event('change', {bubbles: true}));
-                    }
-                }''')
-
-                # Click Search
-                await page.evaluate('''() => {
-                    const buttons = document.querySelectorAll('button, input[type="submit"], input[type="button"]');
-                    for (const el of buttons) {
-                        const text = (el.textContent || el.value || '').trim();
-                        if (text === 'Search') { el.click(); return; }
-                    }
-                }''')
-                await page.wait_for_timeout(3000)
+                await self.set_search_criteria(page, target_date, num_players)
+                await self.click_search(page)
 
                 await page.screenshot(path='search_results.png')
 
-                # Scrape all available tee times from the results table
-                # The cart button has class "success" for available slots
-                results = await page.evaluate('''() => {
-                    const times = [];
-                    const rows = document.querySelectorAll('tr');
-                    for (const row of rows) {
-                        const btn = row.querySelector('a.cart-button');
-                        if (!btn) continue;
-                        const cells = row.querySelectorAll('td');
-                        const cellTexts = Array.from(cells).map(c => c.textContent.trim());
-                        // Columns: [cart icon, Time, Date, Holes, Course, Open Slots, Status...]
-                        const time = cellTexts[1] || '';
-                        const openSlots = cellTexts[5] || '0';
-                        times.push({
-                            time: time,
-                            spots: openSlots
-                        });
-                    }
-                    return times;
-                }''')
+                results = await self.scrape_results(page)
 
                 logger.info(f"Found {len(results)} available tee times for {target_date}")
                 for r in results:
@@ -590,6 +627,68 @@ class TeeTimeBooker:
 
             finally:
                 await browser.close()
+
+    async def search_multiple_dates(self, dates, num_players=1):
+        """
+        Search for available tee times across multiple dates in one browser session.
+        Logs in once, then re-uses the session for each date.
+
+        Args:
+            dates: List of date strings (MM/DD/YYYY format)
+            num_players: Number of players
+
+        Returns:
+            Dict mapping date -> list of {time, spots} dicts
+        """
+        all_results = {}
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=self.config['automation']['headless']
+            )
+            context = await browser.new_context(viewport={'width': 1920, 'height': 1080})
+            page = await context.new_page()
+
+            try:
+                await page.goto(self.booking_url, wait_until='networkidle')
+                await page.wait_for_timeout(2000)
+
+                # Login once
+                await self.login(page)
+
+                min_date, max_date = await self.get_booking_window(page)
+                if min_date and max_date:
+                    logger.info(f"Site booking window: {min_date} - {max_date}")
+
+                for target_date in dates:
+                    try:
+                        if min_date and max_date and not self._in_window(target_date, min_date, max_date):
+                            logger.info(f"{target_date} is outside the booking window, skipping")
+                            all_results[target_date] = []
+                            continue
+
+                        await self.set_search_criteria(page, target_date, num_players)
+                        await self.click_search(page)
+
+                        results = await self.scrape_results(page)
+
+                        logger.info(f"Found {len(results)} tee times for {target_date}")
+                        all_results[target_date] = results
+
+                        # Navigate back to search form for next date
+                        await page.goto(self.booking_url, wait_until='networkidle')
+                        await page.wait_for_timeout(1000)
+
+                    except Exception as e:
+                        logger.error(f"Error searching {target_date}: {e}")
+                        all_results[target_date] = []
+
+            except Exception as e:
+                logger.error(f"Error in multi-date search: {e}")
+
+            finally:
+                await browser.close()
+
+        return all_results
 
     async def monitor_and_book(self):
         """
