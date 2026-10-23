@@ -198,3 +198,30 @@ Once it's on the Pi, turn Muni back on — set `"enabled": true` in
 A quick tunnel hands out a new `*.trycloudflare.com` URL every time it
 restarts. For an address that survives reboots, create a named tunnel and
 swap the `ExecStart` line in `deploy/teetime-tunnel@.service`.
+
+### A stable free URL (ngrok)
+
+A `cloudflared` quick tunnel hands out a new address every restart. ngrok's
+free plan includes one reserved domain, which survives reboots.
+
+1. Sign up at [ngrok.com](https://dashboard.ngrok.com) (free).
+2. **Domains → Create Domain** — you get one, e.g. `chs-tee.ngrok-free.app`.
+3. On the Pi:
+
+   ```bash
+   ngrok config add-authtoken <your-token>
+   cp deploy/tunnel.env.example deploy/tunnel.env
+   # edit tunnel.env, set NGROK_DOMAIN to the domain from step 2
+   ```
+
+`setup-pi.sh` uses ngrok automatically when `deploy/tunnel.env` exists, and
+falls back to a cloudflared quick tunnel when it doesn't. `tunnel.env` is
+gitignored — it's per-machine.
+
+**Staying inside the free tier.** It meters bandwidth (1 GB/month), and the
+page polls every 60 seconds, so the server does two things to keep that
+cheap: it gzips responses, and it answers unchanged polls with a bodyless
+304. The tee time JSON is ~370 KB raw but ~10 KB gzipped — the same keys
+repeated a thousand times — and since data only changes every 5 minutes,
+most polls cost a few hundred bytes. That moves a month's allowance from
+roughly 47 visitor-hours to several thousand.

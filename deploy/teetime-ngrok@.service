@@ -1,0 +1,19 @@
+[Unit]
+Description=ngrok tunnel for the tee time site
+After=network-online.target teetime-server@%i.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+# The static domain comes from deploy/tunnel.env so the unit itself needs
+# no editing. A free ngrok account includes exactly one reserved domain.
+EnvironmentFile=/home/%i/golfbook/deploy/tunnel.env
+ExecStart=/usr/local/bin/ngrok http --domain=${NGROK_DOMAIN} --log=stdout 8080
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/%i/golfbook/data/tunnel.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

@@ -13,6 +13,8 @@ Routes:
 """
 
 import argparse
+import gzip
+import hashlib
 import json
 import os
 import posixpath
@@ -22,6 +24,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, 'web')
 DATA_FILE = os.path.join(BASE_DIR, 'data', 'tee_times.json')
+
+# Below this, compressing costs more than it saves
+GZIP_MIN_BYTES = 1024
+GZIP_TYPES = ('text/', 'application/javascript', 'application/json', 'image/svg')
 
 CONTENT_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -62,12 +68,42 @@ class Handler(BaseHTTPRequestHandler):
         print('%s - %s' % (self.address_string(), fmt % args))
 
     def _send(self, code, body, content_type, cache='no-store'):
+        """
+        Send a response, compressed and revalidatable.
+
+        Both matter on a metered tunnel: the tee time JSON gzips by ~97%
+        (it is the same few keys repeated a thousand times), and the page
+        polls every 60s while the data only changes every 5 min, so most
+        polls can be answered with a bodyless 304.
+        """
         if isinstance(body, str):
             body = body.encode('utf-8')
+
+        etag = '"%s"' % hashlib.md5(body).hexdigest()[:16]
+
+        if code == 200 and self.headers.get('If-None-Match') == etag:
+            self.send_response(304)
+            self.send_header('ETag', etag)
+            self.send_header('Cache-Control', cache)
+            self.end_headers()
+            return
+
+        encoding = None
+        if (code == 200
+                and len(body) >= GZIP_MIN_BYTES
+                and content_type.startswith(GZIP_TYPES)
+                and 'gzip' in self.headers.get('Accept-Encoding', '')):
+            body = gzip.compress(body, 6)
+            encoding = 'gzip'
+
         self.send_response(code)
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', cache)
+        self.send_header('ETag', etag)
+        if encoding:
+            self.send_header('Content-Encoding', encoding)
+            self.send_header('Vary', 'Accept-Encoding')
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)

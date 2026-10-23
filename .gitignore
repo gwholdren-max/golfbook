@@ -16,3 +16,6 @@ __pycache__/
 
 # Collector output
 data/
+
+# ngrok domain/token — local to each machine
+deploy/tunnel.env

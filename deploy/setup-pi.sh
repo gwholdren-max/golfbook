@@ -39,6 +39,17 @@ if [ "${NEED_BROWSER}" = "1" ]; then
   python3 -m playwright install --with-deps chromium
 fi
 
+echo "==> Installing ngrok"
+if ! command -v ngrok >/dev/null 2>&1; then
+  ARCH="arm64"; [ "$(uname -m)" = "armv7l" ] && ARCH="arm"
+  curl -fsSL -o /tmp/ngrok.tgz \
+    "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-${ARCH}.tgz"
+  tar -xzf /tmp/ngrok.tgz -C /tmp
+  sudo install -m 0755 /tmp/ngrok /usr/local/bin/ngrok
+  rm -f /tmp/ngrok.tgz /tmp/ngrok
+fi
+ngrok version || true
+
 echo "==> Installing cloudflared"
 if ! command -v cloudflared >/dev/null 2>&1; then
   ARCH="arm64"; [ "$(uname -m)" = "armv7l" ] && ARCH="arm"
@@ -52,13 +63,24 @@ cloudflared --version
 mkdir -p "${REPO_DIR}/data"
 
 echo "==> Installing systemd services"
-for unit in collector server tunnel; do
+# Use ngrok when a static domain is configured, else a cloudflared quick
+# tunnel (whose URL changes on every restart).
+TUNNEL_UNIT="tunnel"
+if [ -f "${REPO_DIR}/deploy/tunnel.env" ]; then
+  TUNNEL_UNIT="ngrok"
+  echo "==> Found deploy/tunnel.env — using the ngrok static domain"
+else
+  echo "==> No deploy/tunnel.env — falling back to a cloudflared quick tunnel."
+  echo "    For a URL that survives restarts, see deploy/tunnel.env.example"
+fi
+
+for unit in collector server "${TUNNEL_UNIT}"; do
   sudo cp "${REPO_DIR}/deploy/teetime-${unit}@.service" /etc/systemd/system/
 done
 sudo systemctl daemon-reload
 # The units are templates: %i becomes the username, so paths resolve to
 # /home/<user>/golfbook without editing the files.
-for unit in collector server tunnel; do
+for unit in collector server "${TUNNEL_UNIT}"; do
   sudo systemctl enable --now "teetime-${unit}@${USER_NAME}.service"
 done
 
