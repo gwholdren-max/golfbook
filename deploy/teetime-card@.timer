@@ -1,0 +1,10 @@
+[Unit]
+Description=Send the daily tee time card at 8am
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+# If the Pi was off at 8am, send it when it next comes up
+Persistent=true
+
+[Install]
+WantedBy=timers.target

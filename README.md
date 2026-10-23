@@ -225,3 +225,45 @@ cheap: it gzips responses, and it answers unchanged polls with a bodyless
 repeated a thousand times — and since data only changes every 5 minutes,
 most polls cost a few hundred bytes. That moves a month's allowance from
 roughly 47 visitor-hours to several thousand.
+
+### Daily card at 8am
+
+`daily_card.py` renders today's remaining tee times for one course as a PNG
+and sends it by iMessage or email.
+
+```bash
+python3 daily_card.py --save-only           # render, print the path
+python3 daily_card.py                       # render and send
+python3 daily_card.py --course stono-ferry
+```
+
+It scrapes the course directly rather than reading `data/tee_times.json`, so
+it works for a course the collector has paused — Muni once a day is a very
+different proposition from Muni every five minutes. It also drops times
+already in the past, so an 8am card shows what you could still go and play.
+
+**Where it sends.** Email wins if configured, since it works on a Pi too:
+
+```
+CARD_EMAIL=you@example.com
+SMTP_USER=you@gmail.com
+SMTP_PASS=your-app-password      # Gmail needs an App Password, not your login
+CARD_PHONE=+18435551234          # iMessage, macOS only
+```
+
+**Scheduling.** On macOS, `deploy/com.golfbook.dailycard.plist` — launchd
+rather than cron, because launchd runs a missed job on wake and cron just
+skips it:
+
+```bash
+cp deploy/com.golfbook.dailycard.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.golfbook.dailycard.plist
+```
+
+On the Pi, a systemd timer with `Persistent=true` for the same reason:
+
+```bash
+sudo cp deploy/teetime-card@.service deploy/teetime-card@.timer /etc/systemd/system/
+sudo systemctl enable --now teetime-card@$USER.timer
+systemctl list-timers teetime-card@$USER
+```

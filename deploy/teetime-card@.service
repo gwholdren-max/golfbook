@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily tee time card
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=%i
+WorkingDirectory=/home/%i/golfbook
+# xvfb only matters for the WebTrac course; harmless otherwise
+ExecStart=/usr/bin/xvfb-run -a /usr/bin/python3 daily_card.py --course charleston-muni
+StandardOutput=append:/home/%i/golfbook/data/dailycard.log
+StandardError=inherit

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Daily tee time card at 8:00am (macOS).
+
+    cp deploy/com.golfbook.dailycard.plist ~/Library/LaunchAgents/
+    # edit the two paths below if the repo is not at ~/Desktop/golfbook
+    launchctl load ~/Library/LaunchAgents/com.golfbook.dailycard.plist
+
+  launchd, not cron: if the Mac is asleep at 8am, launchd runs the job on
+  wake. A cron entry would simply be missed.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.golfbook.dailycard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>daily_card.py</string>
+    <string>--course</string>
+    <string>charleston-muni</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/graham/Desktop/golfbook</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>8</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/graham/Desktop/golfbook/data/dailycard.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/graham/Desktop/golfbook/data/dailycard.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
